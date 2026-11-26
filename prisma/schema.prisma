@@ -1,0 +1,688 @@
+// Healthcare Delivery Platform – database schema (PostgreSQL, Prisma ORM 7)
+// Profile tables use the user's id as their primary key, so a doctor's,
+// rider's or pharmacy's id is the same as their user id everywhere in the API.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── Enums ─────────────────────────
+
+enum Role {
+  CUSTOMER
+  DOCTOR
+  RIDER
+  PHARMACY
+  ADMIN
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum OrderStatus {
+  PENDING
+  PRESCRIPTION_UNDER_REVIEW
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  RIDER_ASSIGNED
+  PICKED_UP
+  ON_THE_WAY
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+
+enum PaymentMethod {
+  COD
+  ONLINE
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PrescriptionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DeliveryStatus {
+  ASSIGNED
+  PICKED_UP
+  ON_THE_WAY
+  DELIVERED
+  CANCELLED
+}
+
+enum ConsultationType {
+  AUDIO
+  VIDEO
+  CHAT
+}
+
+enum AppointmentStatus {
+  REQUESTED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  REJECTED
+}
+
+enum ConsultationStatus {
+  WAITING
+  ACTIVE
+  ENDED
+}
+
+enum PayoutStatus {
+  PENDING
+  PAID
+}
+
+// ─────────────────── Identity & access ───────────────────
+
+model User {
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String
+  email        String        @unique
+  phone        String        @unique
+  passwordHash String
+  role         Role
+  status       AccountStatus @default(PENDING)
+  avatarUrl    String?
+  /// Where the person was when they signed up (from the phone's GPS, with their permission).
+  lat               Float?
+  lng               Float?
+  city              String?
+  locationUpdatedAt DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  customerProfile CustomerProfile?
+  doctorProfile   DoctorProfile?
+  riderProfile    RiderProfile?
+  pharmacyProfile PharmacyProfile?
+
+  addresses             Address[]
+  verificationDocuments VerificationDocument[]
+  refreshTokens         RefreshToken[]
+  cartItems             CartItem[]
+  prescriptions         Prescription[]          @relation("CustomerPrescriptions")
+  reviewedPrescriptions Prescription[]          @relation("PrescriptionReviewer")
+  orders                Order[]                 @relation("CustomerOrders")
+  customerAppointments  Appointment[]           @relation("CustomerAppointments")
+  messages              ConsultationMessage[]
+  receivedPrescriptions DoctorPrescription[]    @relation("PatientPrescriptions")
+  reviewsWritten        DoctorReview[]          @relation("ReviewAuthor")
+  notifications         Notification[]
+  deviceTokens          DeviceToken[]
+  payments              Payment[]
+  payouts               Payout[]
+  auditLogs             AuditLog[]
+  statusChanges         OrderStatusHistory[]
+
+  @@index([role, status])
+  @@map("users")
+}
+
+model CustomerProfile {
+  userId      String    @id @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dateOfBirth DateTime? @db.Date
+  gender      Gender?
+
+  @@map("customer_profiles")
+}
+
+model DoctorProfile {
+  userId             String          @id @db.Uuid
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specializationId   String?         @db.Uuid
+  specialization     Specialization? @relation(fields: [specializationId], references: [id])
+  qualifications     String?
+  registrationNumber String?
+  experienceYears    Int             @default(0)
+  fee                Decimal         @default(0) @db.Decimal(10, 2)
+  bio                String?
+  languages          String[]
+  rating             Float           @default(0)
+  ratingCount        Int             @default(0)
+
+  availability       DoctorAvailability[]
+  appointments       Appointment[]
+  prescriptionsIssued DoctorPrescription[]
+  reviews            DoctorReview[]
+
+  @@index([specializationId])
+  @@map("doctor_profiles")
+}
+
+model RiderProfile {
+  userId        String    @id @db.Uuid
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleType   String?
+  vehicleNumber String?
+  licenseNumber String?
+  cnic          String?
+  isOnline      Boolean   @default(false)
+  lastLat       Float?
+  lastLng       Float?
+  lastSeenAt    DateTime?
+
+  deliveries Delivery[]
+  locations  RiderLocation[]
+
+  @@map("rider_profiles")
+}
+
+model PharmacyProfile {
+  userId        String  @id @db.Uuid
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  address       String?
+  city          String?
+  licenseNumber String?
+  lat           Float?
+  lng           Float?
+
+  inventory PharmacyInventory[]
+  cartItems CartItem[]
+  orders    Order[]
+
+  @@map("pharmacy_profiles")
+}
+
+model Address {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  line1     String
+  line2     String?
+  city      String
+  lat       Float?
+  lng       Float?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+model VerificationDocument {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  filePath  String
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("verification_documents")
+}
+
+/// Refresh tokens for @nestjs/authentication's TokenService (stored by id; the secret part is never stored).
+model RefreshToken {
+  id              String    @id
+  familyId        String
+  userId          String    @db.Uuid
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime
+  expiresAt       DateTime
+  familyExpiresAt DateTime
+  usedAt          DateTime?
+  claims          Json?
+
+  @@index([familyId])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model RevokedTokenFamily {
+  familyId  String   @id
+  revokedAt DateTime @default(now())
+
+  @@map("revoked_token_families")
+}
+
+// ─────────────────── Catalogue & stock ───────────────────
+
+model MedicineCategory {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      String     @unique
+  imageUrl  String?
+  medicines Medicine[]
+
+  @@map("medicine_categories")
+}
+
+model Medicine {
+  id                   String           @id @default(uuid()) @db.Uuid
+  name                 String
+  brand                String?
+  manufacturer         String?
+  description          String?
+  dosage               String?
+  imageUrl             String?
+  requiresPrescription Boolean          @default(false)
+  categoryId           String           @db.Uuid
+  category             MedicineCategory @relation(fields: [categoryId], references: [id])
+  createdAt            DateTime         @default(now())
+
+  inventory  PharmacyInventory[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([name])
+  @@index([categoryId])
+  @@map("medicines")
+}
+
+model PharmacyInventory {
+  id          String          @id @default(uuid()) @db.Uuid
+  pharmacyId  String          @db.Uuid
+  pharmacy    PharmacyProfile @relation(fields: [pharmacyId], references: [userId], onDelete: Cascade)
+  medicineId  String          @db.Uuid
+  medicine    Medicine        @relation(fields: [medicineId], references: [id])
+  price       Decimal         @db.Decimal(10, 2)
+  stock       Int             @default(0)
+  batchNumber String?
+  expiryDate  DateTime?       @db.Date
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([pharmacyId, medicineId])
+  @@index([medicineId])
+  @@map("pharmacy_inventory")
+}
+
+// ───────────────────── Prescriptions ─────────────────────
+
+model Prescription {
+  id           String             @id @default(uuid()) @db.Uuid
+  customerId   String             @db.Uuid
+  customer     User               @relation("CustomerPrescriptions", fields: [customerId], references: [id], onDelete: Cascade)
+  filePath     String
+  mimeType     String
+  notes        String?
+  status       PrescriptionStatus @default(PENDING)
+  reviewNote   String?
+  reviewedById String?            @db.Uuid
+  reviewedBy   User?              @relation("PrescriptionReviewer", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+  createdAt    DateTime           @default(now())
+
+  orders Order[]
+
+  @@index([customerId])
+  @@map("prescriptions")
+}
+
+// ───────────────────────── Orders ─────────────────────────
+
+model CartItem {
+  id         String          @id @default(uuid()) @db.Uuid
+  customerId String          @db.Uuid
+  customer   User            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  medicineId String          @db.Uuid
+  medicine   Medicine        @relation(fields: [medicineId], references: [id])
+  pharmacyId String          @db.Uuid
+  pharmacy   PharmacyProfile @relation(fields: [pharmacyId], references: [userId], onDelete: Cascade)
+  quantity   Int
+
+  @@unique([customerId, medicineId, pharmacyId])
+  @@map("cart_items")
+}
+
+model Order {
+  id             String          @id @default(uuid()) @db.Uuid
+  orderNumber    String          @unique
+  customerId     String          @db.Uuid
+  customer       User            @relation("CustomerOrders", fields: [customerId], references: [id])
+  pharmacyId     String          @db.Uuid
+  pharmacy       PharmacyProfile @relation(fields: [pharmacyId], references: [userId])
+  /// Snapshot of the delivery address at checkout.
+  address        Json
+  status         OrderStatus     @default(PENDING)
+  paymentMethod  PaymentMethod
+  paymentStatus  PaymentStatus   @default(PENDING)
+  subtotal       Decimal         @db.Decimal(10, 2)
+  deliveryFee    Decimal         @db.Decimal(10, 2)
+  discount       Decimal         @default(0) @db.Decimal(10, 2)
+  total          Decimal         @db.Decimal(10, 2)
+  couponCode     String?
+  prescriptionId String?         @db.Uuid
+  prescription   Prescription?   @relation(fields: [prescriptionId], references: [id])
+  /// One-time code the customer gives the rider at the door.
+  deliveryOtp    String
+  cancelReason   String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  items      OrderItem[]
+  history    OrderStatusHistory[]
+  deliveries Delivery[]
+  payments   Payment[]
+
+  @@index([customerId, createdAt])
+  @@index([pharmacyId, status])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  orderId    String   @db.Uuid
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  medicineId String   @db.Uuid
+  medicine   Medicine @relation(fields: [medicineId], references: [id])
+  name       String
+  price      Decimal  @db.Decimal(10, 2)
+  quantity   Int
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id          String      @id @default(uuid()) @db.Uuid
+  orderId     String      @db.Uuid
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status      OrderStatus
+  note        String?
+  changedById String?     @db.Uuid
+  changedBy   User?       @relation(fields: [changedById], references: [id])
+  createdAt   DateTime    @default(now())
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+model Coupon {
+  code        String    @id
+  percentOff  Int
+  maxDiscount Decimal?  @db.Decimal(10, 2)
+  active      Boolean   @default(true)
+  expiresAt   DateTime?
+
+  @@map("coupons")
+}
+
+// ──────────────────────── Delivery ────────────────────────
+
+model Delivery {
+  id          String         @id @default(uuid()) @db.Uuid
+  orderId     String         @db.Uuid
+  order       Order          @relation(fields: [orderId], references: [id])
+  riderId     String         @db.Uuid
+  rider       RiderProfile   @relation(fields: [riderId], references: [userId])
+  status      DeliveryStatus @default(ASSIGNED)
+  fee         Decimal        @db.Decimal(10, 2)
+  assignedAt  DateTime       @default(now())
+  pickedUpAt  DateTime?
+  startedAt   DateTime?
+  deliveredAt DateTime?
+  cancelledAt DateTime?
+  /// Set while the delivery is active (ASSIGNED..ON_THE_WAY) and cleared when it ends:
+  /// the unique index allows at most one active delivery per order.
+  activeOrderId String?      @unique @db.Uuid
+
+  locations RiderLocation[]
+
+  @@index([riderId, status])
+  @@index([orderId])
+  @@map("delivery_assignments")
+}
+
+model RiderLocation {
+  id         BigInt       @id @default(autoincrement())
+  riderId    String       @db.Uuid
+  rider      RiderProfile @relation(fields: [riderId], references: [userId], onDelete: Cascade)
+  deliveryId String?      @db.Uuid
+  delivery   Delivery?    @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
+  lat        Float
+  lng        Float
+  heading    Float?
+  speed      Float?
+  recordedAt DateTime     @default(now())
+
+  @@index([deliveryId, recordedAt])
+  @@index([recordedAt])
+  @@map("rider_locations")
+}
+
+// ──────────────────── Doctor services ────────────────────
+
+model Specialization {
+  id      String          @id @default(uuid()) @db.Uuid
+  name    String          @unique
+  doctors DoctorProfile[]
+
+  @@map("specializations")
+}
+
+model DoctorAvailability {
+  id          String        @id @default(uuid()) @db.Uuid
+  doctorId    String        @db.Uuid
+  doctor      DoctorProfile @relation(fields: [doctorId], references: [userId], onDelete: Cascade)
+  /// 0 = Sunday … 6 = Saturday
+  dayOfWeek   Int
+  /// "HH:mm", in the platform time zone
+  startTime   String
+  endTime     String
+  slotMinutes Int
+
+  @@index([doctorId, dayOfWeek])
+  @@map("doctor_availability")
+}
+
+model Appointment {
+  id           String            @id @default(uuid()) @db.Uuid
+  doctorId     String            @db.Uuid
+  doctor       DoctorProfile     @relation(fields: [doctorId], references: [userId])
+  customerId   String            @db.Uuid
+  customer     User              @relation("CustomerAppointments", fields: [customerId], references: [id])
+  type         ConsultationType
+  status       AppointmentStatus @default(REQUESTED)
+  startsAt     DateTime
+  endsAt       DateTime
+  fee          Decimal           @db.Decimal(10, 2)
+  reason       String?
+  cancelReason String?
+  /// "<doctorId>|<startsAt ISO>" while the appointment holds its slot, null once cancelled or rejected.
+  /// The unique index is the slot lock that prevents double booking.
+  slotKey      String?           @unique
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  consultation Consultation?
+  review       DoctorReview?
+  payments     Payment[]
+
+  @@index([doctorId, startsAt])
+  @@index([customerId, startsAt])
+  @@map("appointments")
+}
+
+model Consultation {
+  id            String             @id @default(uuid()) @db.Uuid
+  appointmentId String             @unique @db.Uuid
+  appointment   Appointment        @relation(fields: [appointmentId], references: [id])
+  status        ConsultationStatus @default(WAITING)
+  roomId        String             @unique
+  startedAt     DateTime?
+  endedAt       DateTime?
+
+  messages     ConsultationMessage[]
+  prescription DoctorPrescription?
+
+  @@map("consultations")
+}
+
+model ConsultationMessage {
+  id             String       @id @default(uuid()) @db.Uuid
+  consultationId String       @db.Uuid
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  senderId       String       @db.Uuid
+  sender         User         @relation(fields: [senderId], references: [id])
+  body           String
+  createdAt      DateTime     @default(now())
+
+  @@index([consultationId, createdAt])
+  @@map("consultation_messages")
+}
+
+model DoctorPrescription {
+  id             String        @id @default(uuid()) @db.Uuid
+  consultationId String        @unique @db.Uuid
+  consultation   Consultation  @relation(fields: [consultationId], references: [id])
+  doctorId       String        @db.Uuid
+  doctor         DoctorProfile @relation(fields: [doctorId], references: [userId])
+  customerId     String        @db.Uuid
+  customer       User          @relation("PatientPrescriptions", fields: [customerId], references: [id])
+  diagnosis      String
+  notes          String?
+  createdAt      DateTime      @default(now())
+
+  items DoctorPrescriptionItem[]
+
+  @@index([customerId])
+  @@map("doctor_prescriptions")
+}
+
+model DoctorPrescriptionItem {
+  id             String             @id @default(uuid()) @db.Uuid
+  prescriptionId String             @db.Uuid
+  prescription   DoctorPrescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  medicineName   String
+  dosage         String
+  frequency      String
+  durationDays   Int
+  instructions   String?
+
+  @@map("doctor_prescription_items")
+}
+
+model DoctorReview {
+  id            String        @id @default(uuid()) @db.Uuid
+  doctorId      String        @db.Uuid
+  doctor        DoctorProfile @relation(fields: [doctorId], references: [userId])
+  customerId    String        @db.Uuid
+  customer      User          @relation("ReviewAuthor", fields: [customerId], references: [id])
+  appointmentId String        @unique @db.Uuid
+  appointment   Appointment   @relation(fields: [appointmentId], references: [id])
+  rating        Int
+  comment       String?
+  createdAt     DateTime      @default(now())
+
+  @@index([doctorId])
+  @@map("doctor_reviews")
+}
+
+// ──────────────────────── Operations ────────────────────────
+
+model Payment {
+  id              String        @id @default(uuid()) @db.Uuid
+  userId          String        @db.Uuid
+  user            User          @relation(fields: [userId], references: [id])
+  orderId         String?       @db.Uuid
+  order           Order?        @relation(fields: [orderId], references: [id])
+  appointmentId   String?       @db.Uuid
+  appointment     Appointment?  @relation(fields: [appointmentId], references: [id])
+  amount          Decimal       @db.Decimal(10, 2)
+  currency        String        @default("PKR")
+  method          PaymentMethod
+  status          PaymentStatus @default(PENDING)
+  gatewayRef      String?       @unique
+  gatewayResponse Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([userId])
+  @@map("payments")
+}
+
+model Payout {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String       @db.Uuid
+  user        User         @relation(fields: [userId], references: [id])
+  amount      Decimal      @db.Decimal(10, 2)
+  status      PayoutStatus @default(PENDING)
+  periodStart DateTime
+  periodEnd   DateTime
+  createdAt   DateTime     @default(now())
+
+  @@index([userId])
+  @@map("payouts")
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+
+  @@map("device_tokens")
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @db.Uuid
+  actor     User?    @relation(fields: [actorId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  data      Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
