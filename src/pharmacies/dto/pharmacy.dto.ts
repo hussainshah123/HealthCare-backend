@@ -1,5 +1,9 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
   IsDateString,
   IsInt,
   IsLatitude,
@@ -10,6 +14,7 @@ import {
   Length,
   Max,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { IsOptionalField } from '../../common/validation.js';
 
@@ -114,4 +119,69 @@ export class InventoryResponseDto {
   batchNumber: string | null;
   expiryDate: string | null;
   updatedAt: Date;
+}
+
+/**
+ * One CSV row as the pharmacy typed it. Fields stay loose (strings) so a bad
+ * row is reported back with its row number instead of failing the whole file.
+ */
+export class BulkInventoryRowDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  row: number;
+
+  @IsOptionalField()
+  @IsString()
+  @Length(0, 200)
+  medicine?: string;
+
+  @IsOptionalField()
+  @IsString()
+  @Length(0, 40)
+  price?: string;
+
+  @IsOptionalField()
+  @IsString()
+  @Length(0, 40)
+  stock?: string;
+
+  @IsOptionalField()
+  @IsString()
+  @Length(0, 60)
+  batchNumber?: string;
+
+  @IsOptionalField()
+  @IsString()
+  @Length(0, 40)
+  expiryDate?: string;
+}
+
+export class BulkInventoryDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(2000)
+  @ValidateNested({ each: true })
+  @Type(() => BulkInventoryRowDto)
+  rows: BulkInventoryRowDto[];
+
+  /** Check every row and report what would happen, without saving anything. */
+  @IsOptionalField()
+  @IsBoolean()
+  dryRun?: boolean;
+}
+
+export interface BulkInventoryRowResult {
+  row: number;
+  medicine: string;
+  status: 'create' | 'update' | 'error';
+  reason?: string;
+}
+
+export interface BulkInventoryResultDto {
+  dryRun: boolean;
+  created: number;
+  updated: number;
+  failed: number;
+  rows: BulkInventoryRowResult[];
 }

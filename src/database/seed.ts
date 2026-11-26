@@ -6,22 +6,13 @@ import 'dotenv/config';
 import { PasswordHasher } from '@nestjs/authentication';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, type Prisma } from '../generated/prisma/client.js';
+import { CATEGORIES, MEDICINES } from './data/medicines.js';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
 });
 
-const CATEGORIES = ['Pain Relief', 'Antibiotics', 'Diabetes', 'Heart & Blood Pressure', 'Vitamins & Supplements', 'Cold & Flu', 'Skin Care', 'Baby Care'];
 const SPECIALIZATIONS = ['General Physician', 'Pediatrician', 'Dermatologist', 'Gynecologist', 'Cardiologist', 'Psychiatrist', 'ENT Specialist', 'Orthopedic Surgeon', 'Diabetologist', 'Nutritionist'];
-const MEDICINES = [
-  { name: 'Panadol 500mg', brand: 'Panadol', manufacturer: 'GSK', category: 'Pain Relief', requiresPrescription: false, dosage: '1–2 tablets every 4–6 hours, max 8 a day' },
-  { name: 'Brufen 400mg', brand: 'Brufen', manufacturer: 'Abbott', category: 'Pain Relief', requiresPrescription: false, dosage: '1 tablet three times a day after meals' },
-  { name: 'Augmentin 625mg', brand: 'Augmentin', manufacturer: 'GSK', category: 'Antibiotics', requiresPrescription: true, dosage: 'As prescribed' },
-  { name: 'Glucophage 500mg', brand: 'Glucophage', manufacturer: 'Merck', category: 'Diabetes', requiresPrescription: true, dosage: 'As prescribed' },
-  { name: 'Concor 5mg', brand: 'Concor', manufacturer: 'Merck', category: 'Heart & Blood Pressure', requiresPrescription: true, dosage: 'As prescribed' },
-  { name: 'Surbex-Z', brand: 'Surbex', manufacturer: 'Abbott', category: 'Vitamins & Supplements', requiresPrescription: false, dosage: '1 tablet daily' },
-  { name: 'Arinac Forte', brand: 'Arinac', manufacturer: 'Abbott', category: 'Cold & Flu', requiresPrescription: false, dosage: '1 tablet twice a day' },
-];
 
 async function main() {
   const email = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase();
@@ -53,21 +44,34 @@ async function main() {
   for (const name of SPECIALIZATIONS) {
     await prisma.specialization.upsert({ where: { name }, create: { name }, update: {} });
   }
+  // Catalogue from src/database/data/medicines.ts: update by name, create if new.
+  let created = 0;
+  let updated = 0;
   for (const m of MEDICINES) {
-    if (await prisma.medicine.findFirst({ where: { name: m.name } })) continue;
     const category = await prisma.medicineCategory.findUniqueOrThrow({ where: { name: m.category } });
-    await prisma.medicine.create({
-      data: {
-        name: m.name,
-        brand: m.brand,
-        manufacturer: m.manufacturer,
-        dosage: m.dosage,
-        requiresPrescription: m.requiresPrescription,
-        categoryId: category.id,
-      },
-    });
+    const data = {
+      name: m.name,
+      brand: m.brand,
+      manufacturer: m.manufacturer ?? null,
+      dosage: m.dosage,
+      description: m.description,
+      form: m.form,
+      packSize: m.packSize,
+      requiresPrescription: m.requiresPrescription,
+      categoryId: category.id,
+    };
+    const existing = await prisma.medicine.findFirst({ where: { name: { equals: m.name, mode: 'insensitive' } } });
+    if (existing) {
+      await prisma.medicine.update({ where: { id: existing.id }, data });
+      updated++;
+    } else {
+      await prisma.medicine.create({ data });
+      created++;
+    }
   }
-  console.log(`Seeded ${CATEGORIES.length} categories, ${SPECIALIZATIONS.length} specializations, ${MEDICINES.length} medicines`);
+  console.log(
+    `Seeded ${CATEGORIES.length} categories, ${SPECIALIZATIONS.length} specializations, medicines: ${created} new, ${updated} updated`,
+  );
 
   if (process.env.SEED_DEMO_USERS === 'true') await seedDemoUsers();
 }
@@ -99,11 +103,14 @@ async function seedDemoUsers() {
 
   // Stock every medicine at the demo pharmacy, and give the doctor a weekday schedule.
   const pharmacy = await prisma.user.findUniqueOrThrow({ where: { email: 'pharmacy@demo.pk' } });
+  // Demo account only: real pharmacies manage their own stock and prices.
+  const refPrice = new Map(MEDICINES.map((m) => [m.name.toLowerCase(), m.price]));
   for (const m of await prisma.medicine.findMany()) {
+    const price = refPrice.get(m.name.toLowerCase()) ?? 100;
     await prisma.pharmacyInventory.upsert({
       where: { pharmacyId_medicineId: { pharmacyId: pharmacy.id, medicineId: m.id } },
-      create: { pharmacyId: pharmacy.id, medicineId: m.id, price: 100, stock: 50 },
-      update: {},
+      create: { pharmacyId: pharmacy.id, medicineId: m.id, price, stock: 50 },
+      update: { price },
     });
   }
   const doctor = await prisma.user.findUniqueOrThrow({ where: { email: 'doctor@demo.pk' } });

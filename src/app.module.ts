@@ -26,6 +26,7 @@ import { PaymentsModule } from './payments/payments.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { GeoModule } from './geo/geo.module.js';
+import { ContactModule } from './contact/contact.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -73,6 +74,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     NotificationsModule,
     AdminModule,
     GeoModule,
+    ContactModule,
   ],
   controllers: [AppController],
   providers: [

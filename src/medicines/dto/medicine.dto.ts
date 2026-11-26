@@ -45,6 +45,16 @@ export class CreateMedicineDto {
   dosage?: string;
 
   @IsOptionalField()
+  @IsString()
+  @Length(0, 40)
+  form?: string;
+
+  @IsOptionalField()
+  @IsString()
+  @Length(0, 80)
+  packSize?: string;
+
+  @IsOptionalField()
   @IsUrl()
   imageUrl?: string;
 
@@ -75,6 +85,8 @@ export class MedicineResponseDto {
   manufacturer: string | null;
   description: string | null;
   dosage: string | null;
+  form: string | null;
+  packSize: string | null;
   imageUrl: string | null;
   requiresPrescription: boolean;
   categoryId: string;

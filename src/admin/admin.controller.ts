@@ -9,6 +9,7 @@ import { AssignRiderDto } from '../deliveries/dto/delivery.dto.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { PlatformSettingsDto } from '../settings/dto/settings.dto.js';
 import { SettingsService } from '../settings/settings.service.js';
+import { AdminAnalyticsService, AnalyticsQueryDto } from './admin-analytics.service.js';
 import { AdminService } from './admin.service.js';
 import {
   AdminAppointmentsQueryDto,
@@ -22,6 +23,7 @@ import {
 export class AdminController {
   constructor(
     private readonly admin: AdminService,
+    private readonly analyticsService: AdminAnalyticsService,
     private readonly deliveries: DeliveriesService,
     private readonly payments: PaymentsService,
     private readonly settings: SettingsService,
@@ -30,6 +32,12 @@ export class AdminController {
   @Get('stats')
   stats() {
     return this.admin.stats();
+  }
+
+  /** Charts for the overview: daily series, period-over-period totals, breakdowns, live counters. */
+  @Get('analytics')
+  analytics(@Query() query: AnalyticsQueryDto) {
+    return this.analyticsService.analytics(query.days);
   }
 
   @Get('users')

@@ -287,6 +287,10 @@ model Medicine {
   manufacturer         String?
   description          String?
   dosage               String?
+  /// Tablet, Capsule, Syrup, Cream, Drops, Injection, Sachet...
+  form                 String?
+  /// e.g. "Strip of 10 tablets", "120 ml bottle"
+  packSize             String?
   imageUrl             String?
   requiresPrescription Boolean          @default(false)
   categoryId           String           @db.Uuid
@@ -685,4 +689,20 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@map("audit_logs")
+}
+
+/// Messages sent from the website's contact form. Admins are notified of each one.
+model ContactMessage {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  email     String
+  phone     String?
+  /// CUSTOMER | PHARMACY | DOCTOR | RIDER | OTHER
+  topic     String
+  message   String
+  handled   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([handled, createdAt])
+  @@map("contact_messages")
 }

@@ -36,13 +36,14 @@ Sign-up location (optional, send both `lat` and `lng` from the phone's GPS): sav
 - `GET /categories` → `Category[] { id, name, imageUrl }`
 - `GET /medicines?search=&categoryId=&page=&limit=` → paginated `Medicine`
 - `GET /medicines/:id` → `Medicine & { offers: { pharmacyId, pharmacyName, price, stock }[] }`
-- `Medicine = { id, name, brand, manufacturer, description, dosage, imageUrl, requiresPrescription, categoryId, minPrice }`
+- `Medicine = { id, name, brand, manufacturer, description, dosage, form, packSize, imageUrl, requiresPrescription, categoryId, minPrice }` (`form`: Tablet, Capsule, Syrup, Suspension, Drops, Cream, Ointment, Gel, Sachet, Injection; `packSize` e.g. "Strip of 10 tablets"). The seed catalogue lives in `src/database/data/medicines.ts`.
 - Admin: `POST /medicines`, `PATCH /medicines/:id`, `POST /categories`
 
 ## Pharmacies & inventory
 - `GET /pharmacies` → approved pharmacies `{ id, name, address, city, lat, lng }[]`
 - Role PHARMACY: `GET /pharmacies/me` → `{ id, name, address, city, licenseNumber, lat, lng, status }`, `PATCH /pharmacies/me { name?, address?, city?, licenseNumber?, lat?, lng? }`
 - Role PHARMACY: `GET /inventory` → paginated `{ id, medicineId, medicineName, requiresPrescription, price, stock, batchNumber, expiryDate, updatedAt }`, `POST /inventory { medicineId, price, stock, batchNumber?, expiryDate? }`, `PATCH /inventory/:id { price?, stock?, batchNumber?, expiryDate? }`
+- Role PHARMACY, CSV import: `GET /inventory/template.csv` → CSV of every catalogue medicine prefilled with this pharmacy's price/stock (`medicine,category,price,stock,batchNumber,expiryDate`). `POST /inventory/bulk { rows: { row, medicine, price, stock, batchNumber?, expiryDate? }[] (max 2000, values as strings), dryRun? }` → `{ dryRun, created, updated, failed, rows: { row, medicine, status: create|update|error, reason? }[] }`. Medicines match the catalogue by name (case-insensitive); bad rows are reported and skipped, good rows are upserted. Accepts prices like `Rs 1,300` and dates `2027-12-31` or `31/12/2027`. `dryRun: true` saves nothing.
 
 ## Cart (role CUSTOMER)
 - `GET /cart` → `{ items: CartItem[], subtotal }`, `CartItem = { id, medicineId, medicineName, imageUrl, pharmacyId, price, quantity, requiresPrescription }`

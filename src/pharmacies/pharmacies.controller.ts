@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
 import { Can } from '@nestjs/authorization';
 import type { AuthUser } from '../auth/auth-user.js';
 import { RolesPolicy } from '../auth/roles.policy.js';
 import { PaginationQueryDto } from '../common/pagination.js';
-import { CreateInventoryDto, UpdateInventoryDto, UpdatePharmacyDto } from './dto/pharmacy.dto.js';
+import { BulkInventoryDto, CreateInventoryDto, UpdateInventoryDto, UpdatePharmacyDto } from './dto/pharmacy.dto.js';
 import { PharmaciesService } from './pharmacies.service.js';
 
 @Controller('pharmacies')
@@ -43,6 +43,21 @@ export class InventoryController {
   @Post()
   add(@CurrentUser() user: AuthUser, @Body() dto: CreateInventoryDto) {
     return this.pharmacies.addInventory(user.id, dto);
+  }
+
+  /** CSV upload: add or update many items at once. `dryRun` checks without saving. */
+  @Post('bulk')
+  @HttpCode(200)
+  bulk(@CurrentUser() user: AuthUser, @Body() dto: BulkInventoryDto) {
+    return this.pharmacies.bulkUpsertInventory(user.id, dto);
+  }
+
+  /** CSV template with every catalogue medicine, prefilled with current price/stock. */
+  @Get('template.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="medigo-inventory-template.csv"')
+  template(@CurrentUser() user: AuthUser) {
+    return this.pharmacies.inventoryTemplateCsv(user.id);
   }
 
   @Patch(':id')

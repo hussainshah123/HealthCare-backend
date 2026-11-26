@@ -124,6 +124,8 @@ function toMedicine(
     manufacturer: string | null;
     description: string | null;
     dosage: string | null;
+    form: string | null;
+    packSize: string | null;
     imageUrl: string | null;
     requiresPrescription: boolean;
     categoryId: string;
@@ -137,6 +139,8 @@ function toMedicine(
     manufacturer: row.manufacturer,
     description: row.description,
     dosage: row.dosage,
+    form: row.form,
+    packSize: row.packSize,
     imageUrl: row.imageUrl,
     requiresPrescription: row.requiresPrescription,
     categoryId: row.categoryId,
